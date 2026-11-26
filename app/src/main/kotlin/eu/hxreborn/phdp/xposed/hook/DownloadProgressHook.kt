@@ -87,6 +87,7 @@ object DownloadProgressHook {
 
     fun processNotification(sbn: Any) {
         val pkg = getPackageName(sbn) ?: return
+        if (pkg == "com.whatsapp" || pkg == "com.whatsapp.w4b") return
         logDebug { "seen notif pkg=$pkg" }
 
         if (!IndicatorState.enabled || pkg !in IndicatorState.selectedPackages) return

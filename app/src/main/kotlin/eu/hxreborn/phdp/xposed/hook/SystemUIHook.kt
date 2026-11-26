@@ -9,6 +9,7 @@ import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.os.PowerManager
+import android.service.notification.StatusBarNotification
 import android.view.View
 import androidx.core.view.HapticFeedbackConstantsCompat
 import androidx.core.view.ViewCompat
@@ -54,6 +55,12 @@ object SystemUIHook {
     @Volatile
     private var systemUIContext: Context? = null
 
+    @Volatile
+    private var isDownloading = false
+
+    @Volatile
+    private var isMediaPlaying = false
+
     private val cancellationReasonField = ConcurrentHashMap<Class<*>, Optional<Field>>()
 
     fun hook(classLoader: ClassLoader) {
@@ -64,7 +71,6 @@ object SystemUIHook {
     }
 
     // Earliest SystemUI entry point, bypasses GroupCoalescer delay on some apps
-    // Some latency remains because browsers use internal download managers. Would need per pkg hooks to fix
     private fun hookNotificationListener(classLoader: ClassLoader) {
         val targetClass =
             runCatching { classLoader.loadClass(NOTIFICATION_LISTENER) }
@@ -150,7 +156,6 @@ object SystemUIHook {
                     log("load failed pkg=$SYSTEMUI_PKG class=$NOTIF_COLLECTION", it)
                 }.getOrNull() ?: return
 
-        // postNotification entry point for new notifications on Android 12 and later
         targetClass.declaredMethods.filter { it.name == "postNotification" }.forEach { method ->
             runHookCatching {
                 module.hook(method).intercept(notificationAddHooker)
@@ -164,9 +169,6 @@ object SystemUIHook {
             }
         }
 
-        // Hook notification removal - method name varies by Android version
-        // Android 16+: tryRemoveNotification(NotificationEntry)
-        // Android 12-15: onNotificationRemoved(StatusBarNotification, RankingMap, int)
         targetClass.declaredMethods
             .filter {
                 it.name == "tryRemoveNotification" || it.name == "onNotificationRemoved"
@@ -186,7 +188,6 @@ object SystemUIHook {
             }
     }
 
-    // hops to the view UI thread and no-ops until the overlay attaches
     private fun onView(block: IndicatorView.() -> Unit) {
         indicatorView?.let { view -> view.post { view.block() } }
     }
@@ -212,6 +213,7 @@ object SystemUIHook {
             if (IndicatorState.duoStatusBarMode) DuoDownloadPublisher.onFailed()
         }
         DownloadProgressHook.onActiveCountChanged = { count ->
+            isDownloading = count > 0
             onView { activeDownloadCount = count }
             if (count > 0) NetworkSpeedMonitor.start() else NetworkSpeedMonitor.stop()
         }
@@ -224,6 +226,22 @@ object SystemUIHook {
             DuoDownloadPublisher.onActivity()
         }
         NetworkSpeedMonitor.onSpeedChanged = { speed -> onView { currentSpeed = speed } }
+
+        // Media Playback Callbacks (yields automatically if a file download is active)
+        MediaProgressHook.onMediaActiveChanged = { playing ->
+            isMediaPlaying = playing
+            if (!playing && !isDownloading) {
+                onView { progress = 0 }
+            }
+        }
+        MediaProgressHook.onMediaProgress = { mediaPct ->
+            if (!isDownloading && isMediaPlaying) {
+                onView {
+                    this.progress = mediaPct
+                    this.touchActivity()
+                }
+            }
+        }
 
         IndicatorState.onAppVisibilityChanged = { visible -> onView { appVisible = visible } }
         IndicatorState.onTestProgressChanged = { progress ->
@@ -238,7 +256,6 @@ object SystemUIHook {
         }
         IndicatorState.onPreviewTriggered = { onView { startDynamicPreviewAnim() } }
         IndicatorState.onGeometryPreviewTriggered = {
-            // Keep preview persistent if calibration screen is open
             val autoHide = !IndicatorState.persistentPreviewActive
             if (IndicatorState.duoStatusBarMode) {
                 onView { cancelStaticPreviewAnim() }
@@ -375,6 +392,7 @@ object SystemUIHook {
     }
 
     fun prepareHotReload() {
+        MediaProgressHook.clear()
         NetworkSpeedMonitor.shutdown()
         val view = indicatorView ?: return
         val removed = CountDownLatch(1)
@@ -403,6 +421,10 @@ object SystemUIHook {
     fun isAttached(): Boolean = attached
 
     fun detach() {
+        MediaProgressHook.clear()
+        MediaProgressHook.onMediaProgress = null
+        MediaProgressHook.onMediaActiveChanged = null
+
         val receiverContext = indicatorView?.context ?: systemUIContext
         powerSaveReceiver?.let { receiver ->
             runCatching {
@@ -492,10 +514,21 @@ object SystemUIHook {
             val result = chain.proceed()
             val args = chain.args
             logDebug { "intercept notif-add pkg=$SYSTEMUI_PKG args=${args.size}" }
-            // indexed loop avoids an iterator alloc on every posted notification
+            val ctx = indicatorView?.context ?: systemUIContext
             for (i in args.indices) {
+                val arg = args[i] ?: continue
+                if (ctx != null) {
+                    val sbn = when {
+                        DownloadProgressHook.isStatusBarNotification(arg) -> arg as? StatusBarNotification
+                        arg.javaClass.name.contains("NotificationEntry") -> DownloadProgressHook.sbnFromEntry(arg) as? StatusBarNotification
+                        else -> null
+                    }
+                    if (sbn != null) {
+                        MediaProgressHook.inspectNotification(ctx, sbn)
+                    }
+                }
                 DownloadProgressHook.processNotificationArg(
-                    args[i],
+                    arg,
                     DownloadProgressHook::processNotification,
                 )
             }
@@ -508,7 +541,6 @@ object SystemUIHook {
             val args = chain.args
             logDebug { "intercept notif-remove pkg=$SYSTEMUI_PKG args=${args.size}" }
             val reason = extractRemovalReason(args)
-            // indexed loop avoids an iterator alloc on every removed notification
             for (i in args.indices) {
                 val arg = args[i] ?: continue
                 when {

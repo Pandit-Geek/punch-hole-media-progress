@@ -4,12 +4,13 @@ import android.content.Context
 import android.content.Intent
 import android.content.SharedPreferences
 import android.util.Log
+import eu.hxreborn.phdp.BuildConfig
 
 private const val TAG = "PHDP"
 
 object SettingsPush {
-    const val ACTION = "eu.hxreborn.phdp.action.SETTING_CHANGED"
-    const val PERMISSION = "eu.hxreborn.phdp.permission.PUSH_SETTINGS"
+    const val ACTION = "${BuildConfig.APPLICATION_ID}.action.SETTING_CHANGED"
+    const val PERMISSION = "${BuildConfig.APPLICATION_ID}.permission.PUSH_SETTINGS"
     const val EXTRA_KEY = "key"
     const val EXTRA_TYPE = "type"
     const val EXTRA_BOOL = "bool"
