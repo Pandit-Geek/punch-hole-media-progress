@@ -24,8 +24,10 @@ jobs:
         if: env.SIGNED == 'true'
         run: echo "${{ secrets.RELEASE_KEYSTORE }}" | base64 -d > ${{ github.workspace }}/release.keystore
 
-      - name: Test
-        run: ./gradlew test
+      - name: Format and Test
+        run: |
+          ./gradlew ktlintFormat
+          ./gradlew test
 
       - name: Build
         run: |
