@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">Punch-hole Download Progress</string>
-    <string name="app_desc">Download progress ring around the camera cutout</string>
+    <string name="app_name">Punch-hole Media Progress</string>
+    <string name="app_desc">Download and media playback progress ring around the camera cutout</string>
 
     <string name="status_checking">Checking the module</string>
     <string name="status_inactive_title">Module is off</string>

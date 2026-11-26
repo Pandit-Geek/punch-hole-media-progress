@@ -26,7 +26,7 @@ android {
     compileSdk = 37
 
     defaultConfig {
-        applicationId = namespace
+        applicationId = "eu.hxreborn.punchholeprogress"
         minSdk = 28
         targetSdk = 37
         versionCode = project.findProperty("version.code")?.toString()?.toInt()
@@ -109,7 +109,7 @@ android {
     }
 }
 
-base.archivesName = "phdp-v${
+base.archivesName = "phmp-v${
     project.findProperty("version.name")?.toString() ?: gitDescribe.get()
 }"
 
