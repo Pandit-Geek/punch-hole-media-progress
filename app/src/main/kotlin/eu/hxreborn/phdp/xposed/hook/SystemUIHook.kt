@@ -513,16 +513,29 @@ object SystemUIHook {
         XposedInterface.Hooker { chain ->
             val result = chain.proceed()
             val args = chain.args
+            private val notificationAddHooker =
+        XposedInterface.Hooker { chain ->
+            val result = chain.proceed()
+            val args = chain.args
             logDebug { "intercept notif-add pkg=$SYSTEMUI_PKG args=${args.size}" }
             val ctx = indicatorView?.context ?: systemUIContext
             for (i in args.indices) {
                 val arg = args[i] ?: continue
                 if (ctx != null) {
-                    val sbn = when {
-                        DownloadProgressHook.isStatusBarNotification(arg) -> arg as? StatusBarNotification
-                        arg.javaClass.name.contains("NotificationEntry") -> DownloadProgressHook.sbnFromEntry(arg) as? StatusBarNotification
-                        else -> null
-                    }
+                    val sbn =
+                        when {
+                            DownloadProgressHook.isStatusBarNotification(arg) -> {
+                                arg as? StatusBarNotification
+                            }
+
+                            arg.javaClass.name.contains("NotificationEntry") -> {
+                                DownloadProgressHook.sbnFromEntry(arg) as? StatusBarNotification
+                            }
+
+                            else -> {
+                                null
+                            }
+                        }
                     if (sbn != null) {
                         MediaProgressHook.inspectNotification(ctx, sbn)
                     }
