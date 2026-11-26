@@ -513,10 +513,6 @@ object SystemUIHook {
         XposedInterface.Hooker { chain ->
             val result = chain.proceed()
             val args = chain.args
-            private val notificationAddHooker =
-        XposedInterface.Hooker { chain ->
-            val result = chain.proceed()
-            val args = chain.args
             logDebug { "intercept notif-add pkg=$SYSTEMUI_PKG args=${args.size}" }
             val ctx = indicatorView?.context ?: systemUIContext
             for (i in args.indices) {
